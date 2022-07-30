@@ -263,6 +263,10 @@ submatchW r s = matchW xrx positionedString where
     x = repeatedW (symbolW (\_ -> one))
     positionedString = zip [0..] s -- Transforms "ab" to [(0,'a'), (1,'b')]
 
+matchGW :: Semiring s => RegExpCached (Int, chr) s -> [chr] -> s
+matchGW r s = matchW r positionedString where
+    positionedString = zip [0..] s
+
 -- The subclass that allows us to obtain the element from an index.
 class Semiring s => SemiringIndex s where
     index :: Int -> s
@@ -323,10 +327,18 @@ instance Semiring LeftLong where
 instance SemiringIndex LeftLong where
     index i = LeftLong (Range i i)
 
+-- Previous behavior for Bool and Int
+-----------------------------------------------------------------------
+instance SemiringIndex Bool where
+    index i = True
+
+instance SemiringIndex Int where
+    index i = 1
+
 -- AllMatches, custom implementation to list all matches
 -----------------------------------------------------------------------
 data AllMatches = NoMatches | AllMatches Matches deriving (Eq, Show)
-data Matches = NoMatchesStart | Matches (Set.Set (Int, Int)) deriving (Eq, Show)
+data Matches = NoMatchesStart | Matches ([(Int, Int)]) deriving (Eq, Show)
 
 instance Semiring AllMatches where
     zero = NoMatches
@@ -335,18 +347,16 @@ instance Semiring AllMatches where
     plus x NoMatches = x
     plus (AllMatches x) (AllMatches y) = AllMatches (allMatches x y) where
         allMatches NoMatchesStart NoMatchesStart = NoMatchesStart
-        allMatches NoMatchesStart (Matches i) = Matches i
-        allMatches (Matches i) NoMatchesStart = Matches i
-        allMatches (Matches i) (Matches j) = Matches (Set.union i j)
+        allMatches NoMatchesStart (Matches i@(ii:is)) = Matches i
+        allMatches (Matches i@(ii:is)) NoMatchesStart = Matches i
+        allMatches (Matches i) (Matches j) = Matches (j ++ i)
     mult NoMatches _ = NoMatches
     mult _ NoMatches = NoMatches
     mult (AllMatches x) (AllMatches y) = AllMatches (matches x y) where
         matches NoMatchesStart s = s
         matches s NoMatchesStart = s
-        matches (Matches i) (Matches j) = Matches (join i j)
-        join i j = Set.fromList (pairUp (Set.elems i) (Set.elems j))
-        pairUp ((i1, _):is) ((_, j2):js) = [(i1, j2)] ++ (pairUp is js)
-        pairUp _ _ = []
+        matches (Matches i) (Matches j) = Matches (pairUp i j 0)
+        pairUp i j _ = [(i1, j2) | (i1, i2) <- i, (j1, j2) <- j]
 
 instance SemiringIndex AllMatches where
-    index i = AllMatches (Matches (Set.fromList [(i, i)]))
+    index i = AllMatches (Matches [(i, i)])
