@@ -15,6 +15,7 @@ build-type:     Simple
 library
   exposed-modules:
       Project
+      ReTree
   other-modules:
       Paths_cs421_final_project
   hs-source-dirs:
