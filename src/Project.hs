@@ -209,7 +209,7 @@ alternativeW r1 r2 = RegExpCached {
 sequenceW :: Semiring s => RegExpCached chr s -> RegExpCached chr s -> RegExpCached chr s
 sequenceW r1 r2 = RegExpCached {
     emptyW = (emptyW r1) `mult` (emptyW r2),
-    finalW = (finalW r1) `mult` (emptyW r2) `plus` (finalW r2),
+    finalW = ((finalW r1) `mult` (emptyW r2)) `plus` (finalW r2),
     regexpW = SequenceGW r1 r2
 }
 
@@ -220,7 +220,7 @@ repeatedW r = RegExpCached {
     regexpW = RepeatedGW r
 }
 
--- Analogous implementation to match above
+-- Analogous implementation to 'match' above
 matchW :: Semiring s => RegExpCached chr s -> [chr] -> s
 matchW r [] = emptyW r
 matchW r (chr:restString) = finalW (foldl shiftingOperation startingRegExp restString) where
@@ -239,7 +239,7 @@ shiftW marked (AlternativeGW r1 r2) chr =
 shiftW marked (SequenceGW r1 r2) chr =
     sequenceW (shiftW marked (regexpW r1) chr)
               (shiftW shouldMark (regexpW r2) chr) where
-    shouldMark = marked `mult` (emptyW r1) `plus` (finalW r1)
+    shouldMark = (marked `mult` (emptyW r1)) `plus` (finalW r1)
 shiftW marked (RepeatedGW r) chr = repeatedW (shiftW (marked `plus` (finalW r)) (regexpW r) chr)
 
 -- Same implementation as before, updated with the new types.
@@ -253,17 +253,18 @@ weightedG (Alternative r1 r2) = alternativeW (weightedG r1) (weightedG r2)
 weightedG (Sequence r1 r2) = sequenceW (weightedG r1) (weightedG r2)
 weightedG (Repeated r) = repeatedW (weightedG r)
 
--- "Heavy Weights" section
+-- "Heavy Weights" section: Coupling index to each character to
+-- retrieve position information from a match within the string (submatch).
 -----------------------------------------------------------------------
 -----------------------------------------------------------------------
 -- matches x*rx* where x is any symbol.
-submatchW :: Semiring s => RegExpCached (Int, chr) s -> [chr] -> s
+submatchW :: Semiring s => RegExpCached (Int, Char) s -> String -> s
 submatchW r s = matchW xrx positionedString where
     xrx = sequenceW x (sequenceW r x)
     x = repeatedW (symbolW (\_ -> one))
-    positionedString = zip [0..] s -- Transforms "ab" to [(0,'a'), (1,'b')]
+    positionedString = zip [0..] s -- E.g. Transforms "ab" to [(0,'a'), (1,'b')]
 
-matchGW :: Semiring s => RegExpCached (Int, chr) s -> [chr] -> s
+matchGW :: Semiring s => RegExpCached (Int, Char) s -> String -> s
 matchGW r s = matchW r positionedString where
     positionedString = zip [0..] s
 
@@ -315,7 +316,7 @@ instance Semiring LeftLong where
         leftLong NoRange (Range i j) = Range i j
         leftLong (Range i j) NoRange = Range i j
         -- Select the first range if the match is earlier or if they're same length.
-        leftLong (Range i j) (Range k l) | i < k || (i == k && j >= l) = Range i j
+        leftLong (Range i j) (Range k l) | (i < k) || (i == k && j >= l) = Range i j
                                          | otherwise = Range k l
     mult NoLeftLong _ = NoLeftLong
     mult _ NoLeftLong = NoLeftLong
@@ -347,16 +348,20 @@ instance Semiring AllMatches where
     plus x NoMatches = x
     plus (AllMatches x) (AllMatches y) = AllMatches (allMatches x y) where
         allMatches NoMatchesStart NoMatchesStart = NoMatchesStart
-        allMatches NoMatchesStart (Matches i@(ii:is)) = Matches i
-        allMatches (Matches i@(ii:is)) NoMatchesStart = Matches i
+        allMatches NoMatchesStart (Matches i) = Matches i
+        allMatches (Matches i) NoMatchesStart = Matches i
         allMatches (Matches i) (Matches j) = Matches (j ++ i)
     mult NoMatches _ = NoMatches
     mult _ NoMatches = NoMatches
     mult (AllMatches x) (AllMatches y) = AllMatches (matches x y) where
-        matches NoMatchesStart s = s
+        matches NoMatchesStart NoMatchesStart = NoMatchesStart
+        -- NOTE: Because we start a match as soon as a character is read,
+        -- when the first part of a regex is a (foo)*, the option when matches start
+        -- 1+ characters later isn't taken into account.
+        matches NoMatchesStart (Matches i) = Matches i
         matches s NoMatchesStart = s
-        matches (Matches i) (Matches j) = Matches (pairUp i j 0)
-        pairUp i j _ = [(i1, j2) | (i1, i2) <- i, (j1, j2) <- j]
+        matches (Matches i) (Matches j) = Matches (extendAllRanges i j)
+        extendAllRanges i j = [(i1, j2) | (i1, i2) <- i, (j1, j2) <- j]
 
 instance SemiringIndex AllMatches where
     index i = AllMatches (Matches [(i, i)])

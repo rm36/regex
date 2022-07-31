@@ -30,10 +30,22 @@ toBoolRe x = toRegExpCached x :: RegExpCached (Int, Char) Bool
 toIntRe x = toRegExpCached x :: RegExpCached (Int, Char) Int
 toAllMatchesRe x = toRegExpCached x :: RegExpCached (Int, Char) AllMatches
 
+-- Helper function for below. Should only be used with Star param.
+innerOrTransformStar (Star x) = [Seq [x, Star x], Star x]
+
+transformStartingStar :: Re -> Re
+transformStartingStar (Star x) = Or $ innerOrTransformStar $ Star x
+transformStartingStar (Seq ((Star x):xs)) = Or [transformStartingStar (Seq xs), Seq ([x, Star x] ++ xs)]
+transformStartingStar (Or x) = Or $ transformed x where
+    transformed ((Star x):xs) = (innerOrTransformStar $ Star x) ++ (transformed xs)
+    transformed (x:xs) = [x] ++ (transformed xs) -- Skip elements that aren't Star
+    transformed [] = []
+transformStartingStar x = x
+
 substr :: Int -> Int -> String -> String
 substr a b = (take (b - a + 1)) . (drop a)
 
 findMatches :: Re -> String -> [(Int, String)]
-findMatches re str = let matches = submatchW (toAllMatchesRe re) str in
+findMatches re str = let matches = submatchW (toAllMatchesRe (transformStartingStar re)) str in
                     case matches of (AllMatches (Matches m)) -> [(i, substr i j str) | (i,j) <- m]
                                     _ -> []

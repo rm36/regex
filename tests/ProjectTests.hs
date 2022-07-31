@@ -136,6 +136,16 @@ reTreeTests =
     , ( "Works for AllMatches", assertEqual "" (matchGW aaba5 testString) $ (matchGW aabaAllMatches testString) )
     ]
 
+reTreeTransformationTests =
+    [ ( "a* is transformed to aa*|a*", assertEqual "" (Or [Seq [Str "a", Star $ Str "a"], Star $ Str "a"])
+        $ transformStartingStar $ Star $ Str "a" )
+    , ( "a*b is transformed to b|aa*b", assertEqual "" (Or [Seq [Str "b"], Seq [Str "a", Star $ Str "a", Str "b"]])
+        $ transformStartingStar $ Seq [Star $ Str "a", Str "b"] )
+    , ( "ab is not transformed", assertEqual "" (Seq [Str "ab"]) $ transformStartingStar $ Seq [Str "ab"] )
+    , ( "a|b* is transformed to a|bb*|b*", assertEqual "" (Or [Str "a", Seq [Str "b", Star $ Str "b"], Star $ Str "b"])
+        $ transformStartingStar $ Or [Str "a", Star $ Str "b"] )
+    ]
+
 perfTests =
     [ ( ">1B ways to match a(a|b)*a on 50k a's", assertEqual ""
         1249975000
@@ -162,5 +172,6 @@ allTests = testGroup "All Tests"
   , testGroup "Int submatching" $ buildTestCase intTests
   , testGroup "Returns all matches" $ buildTestCase allMatchesTests
   , testGroup "Simpler regex" $ buildTestCase reTreeTests
+  , testGroup "Transform starting Kleene star" $ buildTestCase reTreeTransformationTests
   , testGroup "Performance timing" $ buildTestCase perfTests
   ]
